@@ -53,7 +53,7 @@ type ThreadedActor<'tmsg>(bodyFn: 'tmsg * ThreadedActor<'tmsg> -> unit) as this 
                         signal.Reset()
             // If the thread is 'occupied', mark it as idle
             Interlocked.CompareExchange(&status, ActorStatus.Idle, ActorStatus.Occupied) |> ignore
-            signal.Wait()
+            if Interlocked.Read(&status) <> ActorStatus.Stopped  then signal.Wait()
         // If the thread is stopped, dispose of it
         signal.Dispose()
 
@@ -225,6 +225,46 @@ type AsyncActor<'tmsg>(queue : ConcurrentQueue<'tmsg>) as this =
      interface IDisposable with
          member __.Dispose() =
              thread.Join()
+ 
+ type ThreadedActor3<'tmsg>(bodyFn: 'tmsg -> unit,  ct : CancellationToken ) as this =
+ 
+ 
+     //Do not expose these
+     let queue =  ConcurrentQueue<'tmsg>()
+     let signal = new ManualResetEventSlim(false,1000) //avoids spin
+
+ 
+     let threadFn () =
+         while not <| ct.IsCancellationRequested do
+             let isSuccessful, message = queue.TryDequeue()
+             // If we successfully retrieved the next message, execute it in the context of this thread
+             if isSuccessful then 
+                 bodyFn message
+             else signal.Reset()
+             if queue.IsEmpty && (not <| ct.IsCancellationRequested) then 
+                 signal.Wait()
+                 
+
+         signal.Dispose()
+ 
+ 
+     let thread =
+         Thread(ThreadStart(threadFn), IsBackground = true, Name = "ActorThread")
+ 
+     do thread.Start()
+ 
+ 
+     member this.Enqueue(msg: 'tmsg) =
+         queue.Enqueue(msg)
+         if not <| signal.IsSet then signal.Set()
+
+ 
+ 
+     member this.QueueCount = queue.Count
+ 
+     interface IDisposable with
+         member __.Dispose() =
+             thread.Join() 
  
 type VACore4<'tmsg> = ConcurrentQueue<'tmsg>
  

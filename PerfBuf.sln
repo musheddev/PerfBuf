@@ -16,13 +16,13 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A43E39CB-AFED-4D3C-8C9A-EB3CFE547404}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A43E39CB-AFED-4D3C-8C9A-EB3CFE547404}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A43E39CB-AFED-4D3C-8C9A-EB3CFE547404}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A43E39CB-AFED-4D3C-8C9A-EB3CFE547404}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DCAB3B49-D510-49C9-8CF8-050115E0B114}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DCAB3B49-D510-49C9-8CF8-050115E0B114}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A43E39CB-AFED-4D3C-8C9A-EB3CFE547404}.Debug|Any CPU.ActiveCfg = Release|Any CPU
+		{A43E39CB-AFED-4D3C-8C9A-EB3CFE547404}.Debug|Any CPU.Build.0 = Release|Any CPU
 		{DCAB3B49-D510-49C9-8CF8-050115E0B114}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DCAB3B49-D510-49C9-8CF8-050115E0B114}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DCAB3B49-D510-49C9-8CF8-050115E0B114}.Debug|Any CPU.ActiveCfg = Release|Any CPU
+		{DCAB3B49-D510-49C9-8CF8-050115E0B114}.Debug|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

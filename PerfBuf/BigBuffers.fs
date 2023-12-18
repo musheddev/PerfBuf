@@ -1,4 +1,4 @@
-﻿namespace PerfBuf
+﻿module PerfBuf.BigBuffers
 
 
 
@@ -60,9 +60,10 @@ type Cursor =
 
 open FSharp.NativeInterop
 
-let inline stackalloc<'a when 'a: unmanaged> (length: int): Span<'a> =
-  let p = NativePtr.stackalloc<'a> length |> NativePtr.toVoidPtr
-  Span<'a>(p, length)
+module Alloc =
+    let inline stackalloc<'a when 'a: unmanaged> (length: int): Span<'a> =
+      let p = NativePtr.stackalloc<'a> length |> NativePtr.toVoidPtr
+      Span<'a>(p, length)
         
 //let len = Vector<uint32>.Count //outputs 8        
 
@@ -87,8 +88,7 @@ type Fixed<'t> =
         mutable ary : 't[]; 
         mutable len : int 
     }
-    with static member Create(maxLen) =
-        { ary = Array.zeroCreate maxLen; len = 0 }
+    with static member Create(maxLen) = { ary = Array.zeroCreate maxLen; len = 0 }
 
 type Cur =
     {
@@ -450,40 +450,40 @@ type Cur =
         member this.MakeReader() = mkReader()
         
                     
-[<RequireQualifiedAccess>]
-module ComputeBuffers =
-    open BigBuffers
-
-    let mkSink (src : taskSeq<'t[]>) (buff : CBuff<'t>) affinityId =
-        let writer = buff.MakeWriter()
-        let t = 
-            TaskSeq.iterAsync (fun (x : 't[]) -> 
-                let xlen = x.Length
-                let mutable left = xlen
-                let mutable i = 0
-                let apply (ary,p,len) =
-                    if len <= xlen then 
-                       x.AsSpan(i,len).CopyTo(ary.AsSpan(p,len))
-                       left <- left - len
-                       i<- i + len
-                    else failwith "unxpected"   
-                let v = vtask {
-                    while left > 0 do
-                        do! writer left apply 
-
-                }
-                v.AsTask()
-                ) src
-        task { 
-            SynchronizationContext.SetSynchronizationContext(AffineSynchronizationContex(affinityId)) 
-            do! t }
-
-
-    let mkSource (buff : CBuff<'t>) maxSpan affinityId =
-        let reader = buff.MakeReader()
-        taskSeq {
-            while true do 
-                let apply (ary,p,len) =
-
-        
-        }
+// [<RequireQualifiedAccess>]
+// module ComputeBuffers =
+//     open BigBuffers
+//
+//     let mkSink (src : taskSeq<'t[]>) (buff : CBuff<'t>) affinityId =
+//         let writer = buff.MakeWriter()
+//         let t = 
+//             TaskSeq.iterAsync (fun (x : 't[]) -> 
+//                 let xlen = x.Length
+//                 let mutable left = xlen
+//                 let mutable i = 0
+//                 let apply (ary,p,len) =
+//                     if len <= xlen then 
+//                        x.AsSpan(i,len).CopyTo(ary.AsSpan(p,len))
+//                        left <- left - len
+//                        i<- i + len
+//                     else failwith "unxpected"   
+//                 let v = vtask {
+//                     while left > 0 do
+//                         do! writer left apply 
+//
+//                 }
+//                 v.AsTask()
+//                 ) src
+//         task { 
+//             SynchronizationContext.SetSynchronizationContext(AffineSynchronizationContex(affinityId)) 
+//             do! t }
+//
+//
+//     let mkSource (buff : CBuff<'t>) maxSpan affinityId =
+//         let reader = buff.MakeReader()
+//         taskSeq {
+//             while true do 
+//                 let apply (ary,p,len) =
+//
+//         
+//         }

@@ -450,7 +450,7 @@ type ResettableValueTaskSource() =
         (((new ValueTask(this :> IValueTaskSource, _waitSource.Version)).AsTask ()).GetAwaiter ()).GetResult ()
     member this.WaitAsync(cancellationToken : CancellationToken) = 
         _waitSource.RunContinuationsAsynchronously <- true
-        _waitSourceCancellation <- cancellationToken.UnsafeRegister((fun x token -> (x :?> ResettableValueTaskSource).CancelWaiter(token)), this)
+        _waitSourceCancellation <- cancellationToken.UnsafeRegister((fun x -> (x :?> ResettableValueTaskSource).CancelWaiter(cancellationToken)), this)
         
         new ValueTask(this :> IValueTaskSource, _waitSource.Version)
         
