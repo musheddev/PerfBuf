@@ -4,7 +4,9 @@ open System
 open System.Collections.Concurrent
 open System.Diagnostics.Tracing
 open System.Runtime.CompilerServices
+open System.Security.Cryptography
 open System.Threading
+open System.Threading.Tasks
 open BenchmarkDotNet.Attributes
 open BenchmarkDotNet.Configs
 open BenchmarkDotNet.Diagnosers
@@ -14,6 +16,7 @@ open BenchmarkDotNet.Environments
 open BenchmarkDotNet.Jobs
 open BenchmarkDotNet.Running
 open Disruptor
+open FSharp.Control
 open Microsoft.Diagnostics.NETCore.Client
 open Microsoft.Diagnostics.Tracing.Parsers
 open Microsoft.FSharp.Control
@@ -203,7 +206,7 @@ module Benchmark =
             signal.Wait(0UL)
 
 
-    type Hammer(messages: int[][]) =
+    type Hammer<'t>(messages: 't[][]) =
         let mutable hammerFn = fun _ -> ()
         let mutable sw = SpicyWait()
 
@@ -316,11 +319,206 @@ module Benchmark =
             //     mb.Post(this.Messages.[i])
             signal.WaitUntil(uint64 this.T )
 
+    
+    open System.Threading.Channels   
+    [<Config(typeof<CustomConfig>)>]
+    [<SimpleJob(RunStrategy.Monitoring,  RuntimeMoniker.Net80, warmupCount = 5, iterationCount = 10, invocationCount = 1, id = "MonitoringJob")>] // hot
+    //[<SimpleJob(RunStrategy.Throughput,  RuntimeMoniker.Net80, invocationCount = 1, id = "ThroughputJob")>] 
+    type ChannelsConcurrency () =
+        
+        member val Hammers = [||] with get, set
+
+        member val Messages = [||] with get, set
+
+        [<Params(100,20,1)>]
+        member val  T : int = 0 with get, set 
+            
+        [<Params(100000)>]
+        member val  N : int = 0 with get, set
+        
+        [<Params(true,false)>]
+        member val  P : bool = true with get, set     
+            
+        [<GlobalSetup>]
+        member this.GlobalSetup() = 
+            this.Messages <- Array.init this.N (fun x -> Array.init 100 (fun x -> byte (x % 256)))
+            this.Hammers <- Array.init 1 (fun x -> Hammer(this.Messages))
+
+        [<GlobalCleanup>]
+        member this.GlobalCleanup() = 
+            for h in this.Hammers do
+                h.Stop()
+            
+
+        [<Benchmark(Baseline = true)>]
+        member this.ThreadedActor3 () =
+           let signal = SpicyWait()
+           let cts = new CancellationTokenSource()
+           
+           let actors =
+               Array.init this.T (fun x ->
+                   let mutable cnt = 0
+                   let hash = new SHA512Managed()
+                   PerfBuf.ThreadedActor.ThreadedActor3<byte[]>(
+                       fun x ->
+                               cnt <- cnt + 1
+                               if cnt < this.Messages.Length then
+                                   if this.P then
+                                       let work = hash.ComputeHash(x)
+                                       ()
+                                   else
+                                       let work = Array.sumBy (int) x
+                                       ()
+                               else
+                                   signal.Inc()
+                       , cts.Token))
+           let fn x =
+               for a in actors do
+                   a.Enqueue(x)
+           this.Hammers.[0].StartHammer(fn)
+
+           signal.WaitUntil(uint64 this.T )
+           cts.Cancel()
+           //(actor :> IDisposable).Dispose()
+           //if (cnt <> this.Messages.Length) then failwithf "quit early %d" cnt
+        
+        [<Benchmark>]
+        member this.Channel () =
+            let signal = SpicyWait()
+
+            let mbs =
+               Array.init this.T (fun x ->
+                    let c =  Channel.CreateUnbounded<byte[]>()
+                    let mutable cnt = 0
+                    let hash = new SHA512Managed()
+                    task {
+                        while c.Reader.Completion.IsCompleted = false do
+                            let! msg = c.Reader.ReadAsync()
+                            cnt <- cnt + 1
+                            if cnt < this.Messages.Length then
+                                  if this.P then
+                                       let work = hash.ComputeHash(msg)
+                                       ()
+                                   else
+                                       let work = Array.sumBy (int) msg
+                                       ()
+                            else
+                                signal.Inc()
+                        
+                    }
+                    c
+                   )
+
+            let fn x =
+               for a in mbs do
+                   if not <| a.Writer.TryWrite(x) then failwithf "bad channel"
+
+            this.Hammers.[0].StartHammer(fn)
+            // for i in 0 .. this.Messages.Length - 1 do
+            //     mb.Post(this.Messages.[i])
+            signal.WaitUntil(uint64 this.T )
+
+
+    [<Config(typeof<CustomConfig>)>]
+    [<SimpleJob(RunStrategy.Monitoring,  RuntimeMoniker.Net80, warmupCount = 5, iterationCount = 10, invocationCount = 1, id = "MonitoringJob")>] // hot
+    //[<SimpleJob(RunStrategy.Throughput,  RuntimeMoniker.Net80, invocationCount = 1, id = "ThroughputJob")>] 
+    type BoundedConcurrency () =
+        
+        member val Hammers = [||] with get, set
+
+        member val Messages = [||] with get, set
+
+        [<Params(30,15,1)>]
+        member val  T : int = 0 with get, set 
+            
+        [<Params(100000)>]
+        member val  N : int = 0 with get, set
+        
+        [<Params(true,false)>]
+        member val  P : bool = true with get, set     
+            
+        [<GlobalSetup>]
+        member this.GlobalSetup() = 
+            this.Messages <- Array.init this.N (fun x -> Array.init 100 (fun x -> byte (x % 256)))
+            this.Hammers <- Array.init this.T (fun x -> Hammer(this.Messages))
+
+        [<GlobalCleanup>]
+        member this.GlobalCleanup() = 
+            for h in this.Hammers do
+                h.Stop()
+            
+
+        [<Benchmark(Baseline = true)>]
+        member this.ThreadedActor4 () =
+           let signal = SpicyWait()
+           let cts = new CancellationTokenSource()
+           
+           let actors =
+               Array.init this.T (fun x ->
+                   let mutable cnt = 0
+                   let hash = new SHA512Managed()
+
+                   PerfBuf.ThreadedActor.ThreadedActor4<byte[]>(
+                       fun x ->
+                               cnt <- cnt + 1
+                               if cnt < this.Messages.Length then
+                                   if this.P then
+                                       let work = hash.ComputeHash(x)
+                                       ()
+                                   else
+                                       let work = Array.sumBy (int) x
+                                       ()
+                               else
+                                   signal.Inc()
+                       , 100UL
+                       , cts.Token))
+           Array.iteri (fun i (x : PerfBuf.ThreadedActor.ThreadedActor4<byte[]>) -> this.Hammers.[i].StartHammer(x.Enqueue)) actors
+
+           signal.WaitUntil(uint64 this.T )
+           cts.Cancel()
+           //(actor :> IDisposable).Dispose()
+           //if (cnt <> this.Messages.Length) then failwithf "quit early %d" cnt
+        
+        [<Benchmark>]
+        member this.BoundedChannel () =
+            let signal = SpicyWait()
+
+            let mbs =
+               Array.init this.T (fun x ->
+                    let c =  Channel.CreateBounded<byte[]>(100)
+                    let mutable cnt = 0
+                    let hash = new SHA512Managed()
+                    task {
+                        while c.Reader.Completion.IsCompleted = false do
+                            let! msg = c.Reader.ReadAsync()
+                            cnt <- cnt + 1
+                            if cnt < this.Messages.Length then
+                                  if this.P then
+                                       let work = hash.ComputeHash(msg)
+                                       ()
+                                   else
+                                       let work = Array.sumBy (int) msg
+                                       ()
+                            else
+                                signal.Inc()
+                        
+                    }
+                    c
+                   )
+            Array.iteri (fun i (x : Channel<byte[]>) -> this.Hammers.[i].StartHammer(fun z -> x.Writer.WriteAsync(z).AsTask().Wait())) mbs
+            // let fn x =
+            //    for a in mbs do
+            //        if not <| a.Writer.TryWrite(x) then failwithf "bad channel"
+            //
+            // this.Hammers.[0].StartHammer(fn)
+            // for i in 0 .. this.Messages.Length - 1 do
+            //     mb.Post(this.Messages.[i])
+            signal.WaitUntil(uint64 this.T )
 
 
 [<EntryPoint>]
 let main argv =
     let summary =
-        BenchmarkRunner.Run<Benchmark.MaxConcurrency>()
+        BenchmarkRunner.Run<Benchmark.BoundedConcurrency>()
     printfn "RESULTS: %s" summary.ResultsDirectoryPath
     0 // return an integer exit code

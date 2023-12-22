@@ -265,6 +265,54 @@ type AsyncActor<'tmsg>(queue : ConcurrentQueue<'tmsg>) as this =
      interface IDisposable with
          member __.Dispose() =
              thread.Join() 
+
+ type ThreadedActor4<'tmsg>(bodyFn: 'tmsg -> unit, qDepth : uint64, ct : CancellationToken ) as this =
+ 
+ 
+     //Do not expose these
+     let queue =  ConcurrentQueue<'tmsg>()
+     let signal = new ManualResetEventSlim(false,1000) //avoids spin
+     let rsignal = new ManualResetEventSlim(false,1000) //throttles
+ 
+     let threadFn () =
+         while not <| ct.IsCancellationRequested do
+             let isSuccessful, message = queue.TryDequeue()
+             // If we successfully retrieved the next message, execute it in the context of this thread
+             if isSuccessful then 
+                 bodyFn message
+             else signal.Reset()
+             if uint64 queue.Count <= qDepth && (not rsignal.IsSet) then rsignal.Set()
+             if queue.IsEmpty && (not <| ct.IsCancellationRequested) then 
+                 signal.Wait()
+                 
+
+         signal.Dispose()
+ 
+ 
+     let thread =
+         Thread(ThreadStart(threadFn), IsBackground = true, Name = "ActorThread")
+ 
+     do thread.Start()
+ 
+ 
+     member this.Enqueue(msg: 'tmsg) =
+        if uint64 queue.Count < qDepth then
+            queue.Enqueue(msg)
+            if not <| signal.IsSet then signal.Set()
+
+        else
+            rsignal.Reset()
+            if uint64 queue.Count >= qDepth then rsignal.Wait() //blocking throttle
+            queue.Enqueue(msg)
+
+ 
+ 
+     member this.QueueCount = queue.Count
+ 
+     interface IDisposable with
+         member __.Dispose() =
+             thread.Join() 
+
  
 type VACore4<'tmsg> = ConcurrentQueue<'tmsg>
  
