@@ -223,3 +223,38 @@ WarmupCount=5
 
 
 
+# REFERENCE MATERIAL
+https://github.com/fsprojects/FSharp.Control.TaskSeq
+https://www.bartoszsypytkowski.com/writing-high-performance-f-code/
+https://hamidmosalla.com/2018/06/24/what-is-synchronizationcontext/
+https://mechanical-sympathy.blogspot.com/
+https://github.com/disruptor-net/Disruptor-net
+https://adamsitnik.com/Array-Pool/
+https://matthewcrews.com/blog/2022/03/performance-of-key-value-lookups-types/
+https://matthewcrews.com/blog/2022/02/high-performance-observation-tracking/
+https://matthewcrews.com/blog/2022/03/performance-of-dus-and-active-patterns/
+
+https://medium.com/@SajadJ/c-concurrency-a-note-to-myself-8a99664057bd
+https://neuecc.medium.com/how-to-make-the-fastest-net-serializer-with-net-7-c-11-case-of-memorypack-ad28c0366516
+
+https://github.com/dotnet/corefx/blob/master/src/System.Net.Sockets/src/System/Net/Sockets/Socket.Tasks.cs#L808-L1097
+https://blog.scooletz.com/2018/05/14/task-async-await-valuetask-ivaluetasksource-and-how-to-keep-your-sanity-in-modern-net-world/
+https://github.com/dotnet/runtime/blob/c98c9dc5d9017762c33b449a75c8392ddb10cbf4/src/libraries/System.Net.Quic/src/System/Net/Quic/Internal/ValueTaskSource.cs#L26
+
+https://gist.github.com/Horusiath/70ef44c379257841b645dbafe21e1ae9?ref=bartoszsypytkowski.com
+https://www.bartoszsypytkowski.com/thread-safety-with-affine-thread-pools/
+https://hamidmosalla.com/2023/04/29/thread-affinity-in-parallel-programming-using-tpl/
+https://stackoverflow.com/questions/65529509/what-is-icriticalnotifycompletion-for
+https://ferrous-systems.com/blog/lock-free-ring-buffer/
+
+https://stackoverflow.com/questions/65890049/f-synchronously-start-async-within-a-synchronizationcontext
+https://learn.microsoft.com/en-us/dotnet/api/system.io.pipelines.pipewriter?view=dotnet-plat-ext-7.0&viewFallbackFrom=net-7.0
+https://learn.microsoft.com/en-us/dotnet/api/system.buffers.arraybufferwriter-1?view=net-7.0
+https://www.fssnip.net/Q/title/Bit-manipulation-methods
+https://medium.com/@epeshk/the-big-performance-difference-between-arraypools-in-net-b25c9fc5e31d
+https://github.com/YellPika/FsChannel/blob/master/FsChannel.Demo/Program.fs
+https://learn.microsoft.com/en-us/dotnet/api/system.numerics.vector-1?view=net-8.0
+https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/byrefs
+
+https://devblogs.microsoft.com/dotnet/understanding-the-whys-whats-and-whens-of-valuetask/
+https://blog.stephencleary.com/2023/11/configureawait-in-net-8.html
