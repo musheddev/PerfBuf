@@ -324,7 +324,9 @@ type ValueTaskSource() =
         let mutable valueTask = Unchecked.defaultof<ValueTask>
         let success = 
             (lock this) (
-                fun () -> 
+                fun () ->
+                    _valueTaskSource.Reset()
+                    _valueTaskSource.RunContinuationsAsynchronously <- true
                     valueTask <- new ValueTask(this :> IValueTaskSource, _valueTaskSource.Version)
                     if _state = ValueTaskSourceStatus.None then 
                         if cancellationToken.CanBeCanceled then 
@@ -424,10 +426,11 @@ type ValueTaskSource() =
         
 
 
-type ResettableValueTaskSource() =
+type ResettableValueTaskSource(cancellationToken : CancellationToken) as this =
 
     let mutable _waitSource = ManualResetValueTaskSourceCore<bool>()
-    let mutable _waitSourceCancellation = Unchecked.defaultof<CancellationTokenRegistration> 
+    do _waitSource.RunContinuationsAsynchronously <- false
+    let mutable _waitSourceCancellation = cancellationToken.UnsafeRegister((fun x -> (x :?> ResettableValueTaskSource).CancelWaiter(cancellationToken)), this)
     let mutable _hasWaiter = 0
    
 
@@ -436,29 +439,19 @@ type ResettableValueTaskSource() =
         then _waitSource.SetResult(true)
         ()
     member private this.CancelWaiter(cancellationToken : CancellationToken) = 
-        //Debug.Assert (cancellationToken.IsCancellationRequested)
         if Interlocked.Exchange(&_hasWaiter, 0) = 1
         then _waitSource.SetException (ExceptionDispatchInfo.SetCurrentStackTrace (new OperationCanceledException(cancellationToken)))
         ()
-    member this.Reset() = 
+
+    member this.WaitAsync() =
         if _hasWaiter <> 0
         then raise (new InvalidOperationException("Concurrent use is not supported") :> System.Exception)
         _waitSource.Reset ()
         Volatile.Write(&_hasWaiter, 1)
-    member this.Wait() = 
-        _waitSource.RunContinuationsAsynchronously <- false
-        (((new ValueTask(this :> IValueTaskSource, _waitSource.Version)).AsTask ()).GetAwaiter ()).GetResult ()
-    member this.WaitAsync(cancellationToken : CancellationToken) = 
-        _waitSource.RunContinuationsAsynchronously <- true
-        _waitSourceCancellation <- cancellationToken.UnsafeRegister((fun x -> (x :?> ResettableValueTaskSource).CancelWaiter(cancellationToken)), this)
-        
         new ValueTask(this :> IValueTaskSource, _waitSource.Version)
         
     interface IValueTaskSource with
         member this.GetResult(token : int16) = 
-            //Debug.Assert (this._hasWaiter = 0)
-            _waitSourceCancellation.Dispose ()
-            _waitSourceCancellation <- Unchecked.defaultof<CancellationTokenRegistration> 
             _waitSource.GetResult (token) |> ignore
 
         member this.GetStatus(token : int16) = 
@@ -469,9 +462,6 @@ type ResettableValueTaskSource() =
 
     interface IValueTaskSource<bool> with
         member this.GetResult(token : int16) = 
-            //Debug.Assert (this._hasWaiter = 0)
-            _waitSourceCancellation.Dispose ()
-            _waitSourceCancellation <- Unchecked.defaultof<CancellationTokenRegistration> 
             _waitSource.GetResult (token)
 
         member this.GetStatus(token : int16) = 

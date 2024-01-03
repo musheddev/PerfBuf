@@ -519,8 +519,8 @@ module AsyncChannels =
 
     let init<'t> qDepth ct =
         let queue = ConcurrentQueue<'t>()
-        let vts = ResettableValueTaskSource() //slow down the enqueue (when queue reaches depth)
-        let vtsR = ResettableValueTaskSource() //prevents cpu cycling (when queue is empty)
+        let vts = ResettableValueTaskSource(ct) //slow down the enqueue (when queue reaches depth)
+        let vtsR = ResettableValueTaskSource(ct) //prevents cpu cycling (when queue is empty)
         let mutable count = queue.Count |> uint64
         {
             count = count
@@ -532,29 +532,32 @@ module AsyncChannels =
         }
 
     let enqueue (core : VACore<'t>) (item : 't) =
-        valuetask {
+
             core.queue.Enqueue(item)
             let cnt = Threading.Interlocked.Increment(&core.count)
             core.vtsR.SignalWaiter()
                 
-            if cnt > core.queueDepth then
-                core.vts.Reset()
-                do! core.vts.WaitAsync(core.ct)
-            }
+            //if cnt > core.queueDepth then
+            if Threading.Interlocked.Read(&core.count) > core.queueDepth then
+                core.vts.WaitAsync()
+            else
+                ValueTask.CompletedTask
+                    //do! core.vts.WaitAsync(core.ct)
             
-    let dequeueM (core : VACore<'t>) =
-        if not core.queue.IsEmpty then
-            let cnt = core.queue.Count
-            let msg = Array.zeroCreate<'tmsg> cnt
-            for i=0 to (cnt-1) do
-                let isSuccessful, message = core.queue.TryDequeue()
-                if isSuccessful then 
-                    msg.[i] <- message
-                    Threading.Interlocked.Decrement(&core.count) |> ignore
-            core.vts.SignalWaiter()
-            msg    
-        else 
-            Array.empty
+            
+    // let dequeueM (core : VACore<'t>) =
+    //     if not core.queue.IsEmpty then
+    //         let cnt = core.queue.Count
+    //         let msg = Array.zeroCreate<'tmsg> cnt
+    //         for i=0 to (cnt-1) do
+    //             let isSuccessful, message = core.queue.TryDequeue()
+    //             if isSuccessful then 
+    //                 msg.[i] <- message
+    //                 Threading.Interlocked.Decrement(&core.count) |> ignore
+    //         if not core.vts.SignalWaiter()
+    //         msg    
+    //     else 
+    //         Array.empty
 
         
     let dequeue (core : VACore<'t>) =
@@ -566,201 +569,202 @@ module AsyncChannels =
         else ValueNone 
 
            
-
-    let ingest (core : VACore<'t[]>) count msec (stream : taskSeq<'t>) =
-        let buffer = Array.zeroCreate<'t> count
-        let mutable cnt = 0
-        let mutable clock = Unchecked.defaultof<Timer>
-        
-        let reset _ =
-            let count = Volatile.Read(&cnt)
-            if count > 0 then
-                enqueue core (Array.take count buffer) |> ignore //can overwhelm the actor
-            Interlocked.Exchange(&cnt, 0) |> ignore
-            clock.Change(TimeSpan.FromMilliseconds(msec), TimeSpan.MaxValue) |> ignore
-
-        do clock <- new Timer(TimerCallback(reset))
-
-        stream
-        |> TaskSeq.iter(fun x -> 
-                let c = Interlocked.Increment(&cnt)
-                buffer.[c] <- x
-                if c = count then
-                    reset()
-                )
-        |> ignore
-
-    let debounce (core : VACore<'t>) count (msec : int) =
-        let buffer = Array.zeroCreate<'t> count
-        let mutable cnt = 0
-        let mutable clock = Unchecked.defaultof<Timer>
-        let core2 = init<'t[]> 100UL core.ct
-        let reset _ =
-            valuetask {
-                let count = Interlocked.Exchange(&cnt, 0)
-                if count > 0 then
-                    do! enqueue core2 (Array.take count buffer)  //can overwhelm the actor
-                clock.Change(msec,msec*10) |> ignore
-            }
-            
-        do clock <- new Timer(TimerCallback(reset >> ignore))
-
-        task {
-            while not <| core.ct.IsCancellationRequested do
-                match dequeue core with
-                | ValueSome(x) ->
-                    let c = Interlocked.Increment(&cnt)
-                    buffer.[c-1] <- x
-                    if c = count then
-                        do! reset()
-                | ValueNone -> ()
-                if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
-                    core.vtsR.Reset()
-                    do! core.vtsR.WaitAsync(core.ct)
-            } |> ignore
-        core2
-
-    let run (core : VACore<'t>) : taskSeq<'t> =
-        taskSeq {
-            while not <| core.ct.IsCancellationRequested do
-                let dequeue = dequeueM core
-                yield! dequeue
-
-                if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
-                    core.vtsR.Reset()
-                    do! core.vtsR.WaitAsync(core.ct)
-            }
+    //
+    // let ingest (core : VACore<'t[]>) count msec (stream : taskSeq<'t>) =
+    //     let buffer = Array.zeroCreate<'t> count
+    //     let mutable cnt = 0
+    //     let mutable clock = Unchecked.defaultof<Timer>
+    //     
+    //     let reset _ =
+    //         let count = Volatile.Read(&cnt)
+    //         if count > 0 then
+    //             enqueue core (Array.take count buffer) |> ignore //can overwhelm the actor
+    //         Interlocked.Exchange(&cnt, 0) |> ignore
+    //         clock.Change(TimeSpan.FromMilliseconds(msec), TimeSpan.MaxValue) |> ignore
+    //
+    //     do clock <- new Timer(TimerCallback(reset))
+    //
+    //     stream
+    //     |> TaskSeq.iter(fun x -> 
+    //             let c = Interlocked.Increment(&cnt)
+    //             buffer.[c] <- x
+    //             if c = count then
+    //                 reset()
+    //             )
+    //     |> ignore
+    //
+    // let debounce (core : VACore<'t>) count (msec : int) =
+    //     let buffer = Array.zeroCreate<'t> count
+    //     let mutable cnt = 0
+    //     let mutable clock = Unchecked.defaultof<Timer>
+    //     let core2 = init<'t[]> 100UL core.ct
+    //     let reset _ =
+    //         valuetask {
+    //             let count = Interlocked.Exchange(&cnt, 0)
+    //             if count > 0 then
+    //                 do! enqueue core2 (Array.take count buffer)  //can overwhelm the actor
+    //             clock.Change(msec,msec*10) |> ignore
+    //         }
+    //         
+    //     do clock <- new Timer(TimerCallback(reset >> ignore))
+    //
+    //     task {
+    //         while not <| core.ct.IsCancellationRequested do
+    //             match dequeue core with
+    //             | ValueSome(x) ->
+    //                 let c = Interlocked.Increment(&cnt)
+    //                 buffer.[c-1] <- x
+    //                 if c = count then
+    //                     do! reset()
+    //             | ValueNone -> ()
+    //             if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
+    //                 core.vtsR.Reset()
+    //                 do! core.vtsR.WaitAsync(core.ct)
+    //         } |> ignore
+    //     core2
+    //
+    // let run (core : VACore<'t>) : taskSeq<'t> =
+    //     taskSeq {
+    //         while not <| core.ct.IsCancellationRequested do
+    //             let dequeue = dequeueM core
+    //             yield! dequeue
+    //
+    //             if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
+    //                 core.vtsR.Reset()
+    //                 do! core.vtsR.WaitAsync(core.ct)
+    //         }
     
-    let iter1 (core : VACore<'t>) (fn : 't -> Task<unit>) =
-        task {
+    let iter1 (core : VACore<'t>) (fn : 't -> unit) =
+        valuetask {
             while not <| core.ct.IsCancellationRequested do
                 let dequeue = dequeue core
                 if dequeue.IsSome then
-                    do! fn dequeue.Value
+                    fn dequeue.Value
                 if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
-                    core.vtsR.Reset()
-                    do! core.vtsR.WaitAsync(core.ct)
+                    do! core.vtsR.WaitAsync()
+                    // if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
+                    //     do! core.vtsR.WaitAsync(core.ct)
         }
     
-    let iter (core : VACore<'t>) (fn : 't[] -> ValueTask<unit>)=
-        task {
-            while not <| core.ct.IsCancellationRequested do
-                if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
-                    
-                    core.vtsR.Reset()
-                    do! core.vtsR.WaitAsync(core.ct)
-                let dequeue = dequeueM core
-                do! fn dequeue
-        }
-        
-    let map (core : VACore<'t>) (core2 : VACore<'t2>) (fn : 't -> 't2) =
-        task {
-            while not <| core.ct.IsCancellationRequested do
-                let dequeue = dequeue core
-                if dequeue.IsSome then
-                    let msg = fn dequeue.Value
-                    do! enqueue core2 msg
-                if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
-                    core.vtsR.Reset()
-                    do! core.vtsR.WaitAsync(core.ct)
-        }
-        
-    let mult (core : VACore<'t>) =
-        let bag = ResizeArray<VACore<'t>>()
-        task {
-            while not <| core.ct.IsCancellationRequested do
-                let dequeue = dequeue core
-                if dequeue.IsSome then
-                    for x in bag do
-                        do! enqueue x dequeue.Value
-                if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
-                    core.vtsR.Reset()
-                    do! core.vtsR.WaitAsync(core.ct)
-        }
-        |> ignore
-        fun v -> bag.Add(v)
-        
-//type VAsyncActor<'tmsg>(qDepth : uint64) as this =
-
-//    let mutable status: int64 = ActorStatus.Stopped
-//    let vts = ResettableValueTaskSource() //slow down the enqueue (when queue reaches depth)
-//    let vtsR = ResettableValueTaskSource() //prevents cpu cycling (when queue is empty)
-
-//    let queue = ConcurrentQueue<'tmsg>()
-//    let mutable count = queue.Count |> uint64
-    
-//    member this.Dequeue() =
-//        valuetask {
-//            if not queue.IsEmpty then
-//                let cnt = queue.Count
-//                let msg = Array.zeroCreate<'tmsg> cnt
-//                for i=0 to (cnt-1) do
-//                    let isSuccessful, message = queue.TryDequeue()
-//                    if isSuccessful then 
-//                        msg.[i] <- message
-//                        Threading.Interlocked.Decrement(&count) |> ignore
-//                if uint64 cnt >= qDepth then
-//                   vts.SignalWaiter()
-//                return msg    
-//            else 
-//                return Array.empty
-//        }        
-            
-
-//    member this.RunS () =
-//        if Interlocked.CompareExchange(&status, ActorStatus.Occupied, ActorStatus.Stopped) = ActorStatus.Stopped then
-//            taskSeq {
-//                while Interlocked.Read(&status) <> ActorStatus.Stopped do
-//                    while not queue.IsEmpty do
-//                        let isSuccessful, message = queue.TryDequeue()
-//                        if isSuccessful then 
-                            
-//                            yield message
-//                            if Threading.Interlocked.Decrement(&count) >= qDepth then
-//                                vts.SignalWaiter()
-                            
-//                    if queue.IsEmpty && Interlocked.Read(&count) = 0UL then 
-                        
-//                        vtsR.Reset()
-//                        do! vtsR.WaitAsync(CancellationToken.None)
-//                }
-//        else 
-//            failwith "Cannot be run concurrently"
-    
-//    member this.RunA () =
-//        if Interlocked.CompareExchange(&status, ActorStatus.Occupied, ActorStatus.Stopped) = ActorStatus.Stopped then
-//            taskSeq {
-//                while Interlocked.Read(&status) <> ActorStatus.Stopped do
-//                    let! dequeue = this.Dequeue()
-//                    yield dequeue
-
-//                    if queue.IsEmpty && Interlocked.Read(&count) = 0UL then 
-                        
-//                        vtsR.Reset()
-//                        do! vtsR.WaitAsync(CancellationToken.None)
-//                }
-//        else 
-//            failwith "Cannot be run concurrently"
-
-//    / Enqueue a new messages for the thread to pick up and execute
-//    member this.Enqueue(msg: 'tmsg) = //NOT multithread safe
-//        valuetask {
-//            queue.Enqueue(msg)
-//            let cnt =Threading.Interlocked.Increment(&count)
-//            if cnt = 1UL then 
-//                vtsR.SignalWaiter()
-                
-//            else if cnt > qDepth then
-//                vts.Reset()
-//                do! vts.WaitAsync(CancellationToken.None)
-//            }
-//     Get the length of the actor's message queue
-//    member this.QueueCount() = Interlocked.Read(&count)
-
-//     Stops the actor
-//    member this.Stop() =
-//        Interlocked.Exchange(&status, ActorStatus.Stopped)
-//        |> ignore
+    // let iter (core : VACore<'t>) (fn : 't[] -> ValueTask<unit>)=
+    //     task {
+    //         while not <| core.ct.IsCancellationRequested do
+    //             if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
+    //                 
+    //                 core.vtsR.Reset()
+    //                 do! core.vtsR.WaitAsync(core.ct)
+    //             let dequeue = dequeueM core
+    //             do! fn dequeue
+    //     }
+    //     
+    // let map (core : VACore<'t>) (core2 : VACore<'t2>) (fn : 't -> 't2) =
+    //     task {
+    //         while not <| core.ct.IsCancellationRequested do
+    //             let dequeue = dequeue core
+    //             if dequeue.IsSome then
+    //                 let msg = fn dequeue.Value
+    //                 do! enqueue core2 msg
+    //             if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
+    //                 core.vtsR.Reset()
+    //                 do! core.vtsR.WaitAsync(core.ct)
+    //     }
+    //     
+    // let mult (core : VACore<'t>) =
+    //     let bag = ResizeArray<VACore<'t>>()
+    //     task {
+    //         while not <| core.ct.IsCancellationRequested do
+    //             let dequeue = dequeue core
+    //             if dequeue.IsSome then
+    //                 for x in bag do
+    //                     do! enqueue x dequeue.Value
+    //             if core.queue.IsEmpty && Interlocked.Read(&core.count) = 0UL then 
+    //                 core.vtsR.Reset()
+    //                 do! core.vtsR.WaitAsync(core.ct)
+    //     }
+    //     |> ignore
+    //     fun v -> bag.Add(v)
+//     //     
+// type VAsyncActor<'tmsg>(qDepth : uint64) as this =
+//
+//     let mutable status: int64 = ActorStatus.Stopped
+//     let vts = ResettableValueTaskSource() //slow down the enqueue (when queue reaches depth)
+//     let vtsR = ResettableValueTaskSource() //prevents cpu cycling (when queue is empty)
+//
+//     let queue = ConcurrentQueue<'tmsg>()
+//     let mutable count = queue.Count |> uint64
+//     
+//     member this.Dequeue() =
+//         valuetask {
+//             if not queue.IsEmpty then
+//                 let cnt = queue.Count
+//                 let msg = Array.zeroCreate<'tmsg> cnt
+//                 for i=0 to (cnt-1) do
+//                     let isSuccessful, message = queue.TryDequeue()
+//                     if isSuccessful then 
+//                         msg.[i] <- message
+//                         Threading.Interlocked.Decrement(&count) |> ignore
+//                 if uint64 cnt >= qDepth then
+//                    vts.SignalWaiter()
+//                 return msg    
+//             else 
+//                 return Array.empty
+//         }        
+//             
+//
+//     member this.RunS () =
+//         if Interlocked.CompareExchange(&status, ActorStatus.Occupied, ActorStatus.Stopped) = ActorStatus.Stopped then
+//             taskSeq {
+//                 while Interlocked.Read(&status) <> ActorStatus.Stopped do
+//                     while not queue.IsEmpty do
+//                         let isSuccessful, message = queue.TryDequeue()
+//                         if isSuccessful then 
+//                             
+//                             yield message
+//                             if Threading.Interlocked.Decrement(&count) >= qDepth then
+//                                 vts.SignalWaiter()
+//                             
+//                     if queue.IsEmpty && Interlocked.Read(&count) = 0UL then 
+//                         
+//                         vtsR.Reset()
+//                         do! vtsR.WaitAsync(CancellationToken.None)
+//                 }
+//         else 
+//             failwith "Cannot be run concurrently"
+//     
+//     member this.RunA () =
+//         if Interlocked.CompareExchange(&status, ActorStatus.Occupied, ActorStatus.Stopped) = ActorStatus.Stopped then
+//             taskSeq {
+//                 while Interlocked.Read(&status) <> ActorStatus.Stopped do
+//                     let! dequeue = this.Dequeue()
+//                     yield dequeue
+//
+//                     if queue.IsEmpty && Interlocked.Read(&count) = 0UL then 
+//                         
+//                         vtsR.Reset()
+//                         do! vtsR.WaitAsync(CancellationToken.None)
+//                 }
+//         else 
+//             failwith "Cannot be run concurrently"
+//
+//     // Enqueue a new messages for the thread to pick up and execute
+//     member this.Enqueue(msg: 'tmsg) = //NOT multithread safe
+//         valuetask {
+//             queue.Enqueue(msg)
+//             let cnt =Threading.Interlocked.Increment(&count)
+//             if cnt = 1UL then 
+//                 vtsR.SignalWaiter()
+//                 
+//             else if cnt > qDepth then
+//                 vts.Reset()
+//                 do! vts.WaitAsync(CancellationToken.None)
+//             }
+//     // Get the length of the actor's message queue
+//     member this.QueueCount() = Interlocked.Read(&count)
+//
+//      //Stops the actor
+//     member this.Stop() =
+//         Interlocked.Exchange(&status, ActorStatus.Stopped)
+//         |> ignore
 
 
 //    interface IDisposable with

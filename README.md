@@ -222,6 +222,42 @@ WarmupCount=5
 | Channel        | 30 | 100000 | True  | 237.35 ms | 15.009 ms |  9.927 ms | 239.31 ms |  0.80 |    0.07 | 65000.0000 |           76520.0000 |          48.0000 | 1000.0000 | 520281.57 KB |        1.01 |
 
 
+// * Summary *
+
+BenchmarkDotNet v0.13.8, Pop!_OS 22.04 LTS
+AMD Ryzen 7 6800U with Radeon Graphics, 1 CPU, 16 logical and 8 physical cores
+.NET SDK 8.0.100
+[Host]           : .NET 8.0.0 (8.0.23.53103), X64 RyuJIT AVX2 DEBUG
+AsyncChannelsJob : .NET 8.0.0 (8.0.23.53103), X64 RyuJIT AVX2
+
+Job=AsyncChannelsJob  Runtime=.NET 8.0  InvocationCount=1  
+IterationCount=5  RunStrategy=Monitoring  UnrollFactor=1  
+WarmupCount=3
+
+| Method         | T  | N      | P     | Mean        | Error      | StdDev    | Ratio | RatioSD | Gen0      | Completed Work Items | Lock Contentions | Allocated    | Alloc Ratio |
+|----------------|--- |------- |------ |------------:|-----------:|----------:|------:|--------:|----------:|---------------------:|-----------------:|-------------:|------------:|
+| ValueActor     | 1  | 100000 | False |    38.47 ms | 109.297 ms | 28.384 ms |  1.00 |    0.00 |         - |                    - |                - |     46.68 KB |        1.00 |
+| BoundedChannel | 1  | 100000 | False |    20.65 ms |  12.617 ms |  3.277 ms |  1.13 |    1.09 |         - |            4857.0000 |           8.0000 |    383.81 KB |        8.22 |
+|                |    |        |       |             |            |           |       |         |           |                      |                  |              |             |
+| ValueActor   | 1  | 100000 | True  |    99.34 ms |  97.873 ms | 25.417 ms |  1.00 |    0.00 |         - |                    - |                - |  17234.01 KB |        1.00 |
+| BoundedChannel | 1  | 100000 | True  |   128.94 ms |  29.091 ms |  7.555 ms |  1.36 |    0.32 |         - |           98900.0000 |           8.0000 |  24944.06 KB |        1.45 |
+|                |    |        |       |             |            |           |       |         |           |                      |                  |              |             |
+| ValueActor  | 15 | 100000 | False |    34.45 ms |   5.824 ms |  1.513 ms |  1.00 |    0.00 |         - |                    - |                - |    482.76 KB |        1.00 |
+| BoundedChannel | 15 | 100000 | False |    76.75 ms |  41.562 ms | 10.794 ms |  2.23 |    0.32 |         - |          111201.0000 |          52.0000 |   8843.37 KB |       18.32 |
+|                |    |        |       |             |            |           |       |         |           |                      |                  |              |             |
+| ValueActor  | 15 | 100000 | True  |   551.72 ms |  26.926 ms |  6.992 ms |  1.00 |    0.00 | 3000.0000 |                    - |                - | 258284.42 KB |        1.00 |
+| BoundedChannel | 15 | 100000 | True  |   569.16 ms |  28.188 ms |  7.320 ms |  1.03 |    0.01 | 3000.0000 |          803896.0000 |         635.0000 | 320931.56 KB |        1.24 |
+|                |    |        |       |             |            |           |       |         |           |                      |                  |              |             |
+| ValueActor   | 30 | 100000 | False |    93.57 ms |  51.640 ms | 13.411 ms |  1.00 |    0.00 |         - |                    - |                - |    950.22 KB |        1.00 |
+| BoundedChannel | 30 | 100000 | False |   127.36 ms |  32.105 ms |  8.338 ms |  1.38 |    0.13 |         - |           54908.0000 |        1191.0000 |   3560.92 KB |        3.75 |
+|                |    |        |       |             |            |           |       |         |           |                      |                  |              |             |
+| ValueActor  | 30 | 100000 | True  | 1,075.95 ms |  40.364 ms | 10.482 ms |  1.00 |    0.00 | 6000.0000 |                    - |                - | 516553.65 KB |        1.00 |
+| BoundedChannel | 30 | 100000 | True  | 1,073.02 ms |  24.850 ms |  6.453 ms |  1.00 |    0.01 | 6000.0000 |           59617.0000 |        2196.0000 | 520664.98 KB |        1.01 |
+
+
+
+
+
 
 # REFERENCE MATERIAL
 https://github.com/fsprojects/FSharp.Control.TaskSeq
