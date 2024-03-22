@@ -7,6 +7,7 @@ open System.Runtime.CompilerServices
 open System.Security.Cryptography
 open System.Threading
 open System.Threading.Tasks
+open Akka.Actor
 open BenchmarkDotNet.Attributes
 open BenchmarkDotNet.Configs
 open BenchmarkDotNet.Diagnosers
@@ -20,52 +21,13 @@ open FSharp.Control
 open Microsoft.Diagnostics.NETCore.Client
 open Microsoft.Diagnostics.Tracing.Parsers
 open Microsoft.FSharp.Control
+open PerfBuf.Benchmark.Util
 open Perfolizer.Horology
 
-type SpicyWait() =
-    let mutable m = 0UL
-    let spin = AggressiveSpinWait()
-    
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
-    member this.Signal() =
-        Volatile.Write(&m, 1UL)
-    
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
-    member this.Inc() =
-        Interlocked.Increment(&m) |> ignore
 
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
-    member this.Reset() =
-        Volatile.Write(&m, 0UL) 
-        
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]     
-    member this.Wait(c) =
-        while Volatile.Read(&m) = c do
-            spin.SpinOnce()
-
-
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]     
-    member this.WaitUntil(c) =
-        while Volatile.Read(&m) < c do
-            spin.SpinOnce()
 module Benchmark =
 
-    type CustomConfig() as this = 
-        inherit ManualConfig()
-        
-        let providers =
-            [|
-                new EventPipeProvider(ClrTraceEventParser.ProviderName, EventLevel.Verbose, int64 (ClrTraceEventParser.Keywords.Contention ||| ClrTraceEventParser.Keywords.Threading  ||| ClrTraceEventParser.Keywords.GC ))
-                new EventPipeProvider("System.Buffers.ArrayPoolEventSource", EventLevel.Informational, Int64.MaxValue)
-            |]
-        
-        do
-            //base.Add(DefaultConfig.Instance)
-            this.KeepBenchmarkFiles(true)
-            this.AddDiagnoser(ThreadingDiagnoser.Default)
-            this.AddDiagnoser(new EventPipeProfiler(providers = providers))
-            this.AddDiagnoser(MemoryDiagnoser.Default)
-            ()
+
             // this.AddJob(
             //     
             //     Job.Dry
@@ -206,31 +168,7 @@ module Benchmark =
             signal.Wait(0UL)
 
 
-    type Hammer<'t>(messages: 't[][]) =
-        let mutable hammerFn = fun _ -> ()
-        let mutable sw = SpicyWait()
 
-        let mutable cond = 1
-
-        let fn1 () =
-            while cond = 1 do 
-                sw.Wait(0UL)
-                if cond = 1 then
-                    for i in 0 .. messages.Length - 1 do
-                        hammerFn(messages.[i])
-                    sw.Reset()
-        let th = Thread(ThreadStart(fn1))
-        do th.Start()
-        
-    
-        member this.StartHammer(fn) =
-            hammerFn <- fn
-            sw.Signal()
-
-        member this.Stop() =
-            Interlocked.Exchange(&cond,0)
-            sw.Signal()
-            th.Join()
     
     [<Config(typeof<CustomConfig>)>]
     //[<SimpleJob(RunStrategy.Monitoring,  RuntimeMoniker.Net80, warmupCount = 0, iterationCount = 1, invocationCount = 5, id = "MonitoringJob")>] // cold
@@ -520,6 +458,7 @@ module Benchmark =
     //[<SimpleJob(RunStrategy.Throughput,  RuntimeMoniker.Net80, invocationCount = 1, id = "ThroughputJob")>] 
     type AsyncChannelsConcurrency () =
         
+        
         member val Hammers = [||] with get, set
 
         member val Messages = [||] with get, set
@@ -537,6 +476,7 @@ module Benchmark =
         member this.GlobalSetup() = 
             this.Messages <- Array.init this.N (fun x -> Array.init 100 (fun x -> byte (x % 256)))
             this.Hammers <- Array.init this.T (fun x -> Hammer(this.Messages))
+           
 
         [<GlobalCleanup>]
         member this.GlobalCleanup() = 

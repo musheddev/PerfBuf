@@ -10,6 +10,7 @@
         <Compile Include="BigBuffers.fs" />
         <Compile Include="Disruptor.fs" />
         <Compile Include="ThreadedActor.fs" />
+        <Compile Include="Akka.fs" />
     </ItemGroup>
 
     <ItemGroup>
